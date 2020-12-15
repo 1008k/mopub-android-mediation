@@ -178,11 +178,11 @@ public class GooglePlayServicesBanner extends BaseAd {
 
     @Override
     protected void onInvalidate() {
+        Views.removeFromParent(mGoogleAdView);
+
         if (mGoogleAdView != null) {
-            Views.removeFromParent(mGoogleAdView);
             mGoogleAdView.setAdListener(null);
             mGoogleAdView.destroy();
-            mGoogleAdView = null;
         }
     }
 
@@ -213,9 +213,6 @@ public class GooglePlayServicesBanner extends BaseAd {
             MoPubLog.log(getAdNetworkId(), LOAD_FAILED, ADAPTER_NAME,
                     getMoPubErrorCode(loadAdError.getCode()).getIntCode(),
                     getMoPubErrorCode(loadAdError.getCode()));
-            /*MoPubLog.log(getAdNetworkId(), CUSTOM, ADAPTER_NAME, "Failed to load Google " +
-                    "banners with message: " + loadAdError.getMessage() + ". Caused by: " +
-                    loadAdError.getCause());*/
             MoPubLog.log(getAdNetworkId(), CUSTOM, ADAPTER_NAME, "Failed to load Google " +
                     "banners with message: " + loadAdError.getMessage() + ". Caused by: " +
                     loadAdError.getCause() + ". ErrorDomain by:" + loadAdError.getDomain() +". Responsinfo by:" + loadAdError.getResponseInfo());
@@ -230,7 +227,7 @@ public class GooglePlayServicesBanner extends BaseAd {
             final int receivedWidth = mGoogleAdView.getAdSize().getWidth();
             final int receivedHeight = mGoogleAdView.getAdSize().getHeight();
 
-            /*if (receivedWidth > adWidth || receivedHeight > adHeight && !adaptiveBanner) {
+            if (receivedWidth > adWidth || receivedHeight > adHeight && !adaptiveBanner) {
                 MoPubLog.log(getAdNetworkId(), LOAD_FAILED, ADAPTER_NAME,
                         NETWORK_NO_FILL.getIntCode(),
                         NETWORK_NO_FILL);
@@ -241,7 +238,7 @@ public class GooglePlayServicesBanner extends BaseAd {
                 if (mLoadListener != null) {
                     mLoadListener.onAdLoadFailed(getMoPubErrorCode(NETWORK_NO_FILL.getIntCode()));
                 }
-            } else {*/
+            } else {
                 MoPubLog.log(getAdNetworkId(), LOAD_SUCCESS, ADAPTER_NAME);
                 MoPubLog.log(getAdNetworkId(), SHOW_ATTEMPTED, ADAPTER_NAME);
                 MoPubLog.log(getAdNetworkId(), SHOW_SUCCESS, ADAPTER_NAME);
@@ -249,7 +246,7 @@ public class GooglePlayServicesBanner extends BaseAd {
                 if (mLoadListener != null) {
                     mLoadListener.onAdLoaded();
                 }
-            //}
+            }
         }
 
         @Override
