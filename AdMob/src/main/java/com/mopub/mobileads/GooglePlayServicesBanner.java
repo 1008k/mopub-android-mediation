@@ -2,6 +2,7 @@ package com.mopub.mobileads;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.res.Resources;
 import android.text.TextUtils;
 import android.view.View;
 
@@ -22,6 +23,7 @@ import com.mopub.common.util.Views;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.google.android.gms.ads.RequestConfiguration.TAG_FOR_CHILD_DIRECTED_TREATMENT_FALSE;
 import static com.google.android.gms.ads.RequestConfiguration.TAG_FOR_CHILD_DIRECTED_TREATMENT_TRUE;
@@ -36,9 +38,14 @@ import static com.mopub.common.logging.MoPubLog.AdapterLogEvent.LOAD_FAILED;
 import static com.mopub.common.logging.MoPubLog.AdapterLogEvent.LOAD_SUCCESS;
 import static com.mopub.common.logging.MoPubLog.AdapterLogEvent.SHOW_ATTEMPTED;
 import static com.mopub.common.logging.MoPubLog.AdapterLogEvent.SHOW_SUCCESS;
+
 import static com.mopub.mobileads.GooglePlayServicesAdapterConfiguration.forwardNpaIfSet;
-import static com.mopub.mobileads.MoPubErrorCode.NETWORK_NO_FILL;
-import static com.mopub.mobileads.MoPubErrorCode.NO_FILL;
+import static com.mopub.mobileads.MoPubErrorCode.ADAPTER_CONFIGURATION_ERROR;
+import static com.mopub.mobileads.MoPubErrorCode.INTERNAL_ERROR;
+import static  com.mopub.mobileads.MoPubErrorCode.NETWORK_NO_FILL ;
+import static com.mopub.mobileads.MoPubErrorCode.NO_CONNECTION;
+import static  com.mopub.mobileads.MoPubErrorCode.NO_FILL ;
+import static com.mopub.mobileads.MoPubErrorCode.UNSPECIFIED;
 
 public class GooglePlayServicesBanner extends BaseAd {
     /*
@@ -55,40 +62,45 @@ public class GooglePlayServicesBanner extends BaseAd {
     private AdView mGoogleAdView;
     @Nullable
     private String mAdUnitId;
-    private Integer adWidth;
-    private Integer adHeight;
-    
     private Boolean adaptiveBanner = false;
+
+    private Integer adHeight;
+    private Integer adWidth;
+    private AdSize adSize;
 
     @Override
     protected void load(@NonNull final Context context, @NonNull final AdData adData) {
         Preconditions.checkNotNull(context);
         Preconditions.checkNotNull(adData);
 
+        // Admobの高さと幅を指定するLocalExtrasが含まれていた場合、AdSizeにそれを使うようにする
         adWidth = adData.getAdWidth();
         adHeight = adData.getAdHeight();
         final Map<String, String> extras = adData.getExtras();
-
+        if(extras.get("custom_ad_width") != null) {
+            adWidth = Integer.parseInt(Objects.requireNonNull(extras.get("custom_ad_width")));
+        }
+        if(extras.get("custom_ad_height") != null) {
+            adHeight = Integer.parseInt(Objects.requireNonNull(extras.get("custom_ad_height")));
+        }
         mAdUnitId = extras.get(AD_UNIT_ID_KEY);
 
         mGoogleAdView = new AdView(context);
         mGoogleAdView.setAdListener(new AdViewListener());
         mGoogleAdView.setAdUnitId(mAdUnitId);
 
-        final AdSize adSize = (adWidth == null || adHeight == null || adWidth <= 0 || adHeight <= 0)
-                ? null
-                : new AdSize(adWidth, adHeight);
-
+        if (extras.get("adaptive_banner") != null) {
+            adaptiveBanner = Boolean.valueOf(Objects.requireNonNull(extras.get("adaptive_banner")));
+        }
+        if (adaptiveBanner) {
+            adSize = AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, (int) (Resources.getSystem().getDisplayMetrics().widthPixels / Resources.getSystem().getDisplayMetrics().density));
+        } else {
+            adSize = (adWidth == null || adHeight == null || adWidth <= 0 || adHeight <= 0)
+                    ? null
+                    : new AdSize(adWidth, adHeight);
+        }
         if (adSize != null) {
-            if (extras.get("adaptive_banner") != null) {
-                adaptiveBanner = Boolean.valueOf(Objects.requireNonNull(extras.get("adaptive_banner")));
-            }
-            if (adaptiveBanner) {
-                int displayWidth= (int) (Resources.getSystem().getDisplayMetrics().widthPixels / Resources.getSystem().getDisplayMetrics().density);
-                mGoogleAdView.setAdSize(AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, displayWidth));
-            } else {
-                mGoogleAdView.setAdSize(adSize);
-            }
+            mGoogleAdView.setAdSize(adSize);
         } else {
             MoPubLog.log(getAdNetworkId(), LOAD_FAILED, ADAPTER_NAME,
                     NETWORK_NO_FILL.getIntCode(),
@@ -166,11 +178,11 @@ public class GooglePlayServicesBanner extends BaseAd {
 
     @Override
     protected void onInvalidate() {
-        Views.removeFromParent(mGoogleAdView);
-
         if (mGoogleAdView != null) {
+            Views.removeFromParent(mGoogleAdView);
             mGoogleAdView.setAdListener(null);
             mGoogleAdView.destroy();
+            mGoogleAdView = null;
         }
     }
 
@@ -201,9 +213,12 @@ public class GooglePlayServicesBanner extends BaseAd {
             MoPubLog.log(getAdNetworkId(), LOAD_FAILED, ADAPTER_NAME,
                     getMoPubErrorCode(loadAdError.getCode()).getIntCode(),
                     getMoPubErrorCode(loadAdError.getCode()));
+            /*MoPubLog.log(getAdNetworkId(), CUSTOM, ADAPTER_NAME, "Failed to load Google " +
+                    "banners with message: " + loadAdError.getMessage() + ". Caused by: " +
+                    loadAdError.getCause());*/
             MoPubLog.log(getAdNetworkId(), CUSTOM, ADAPTER_NAME, "Failed to load Google " +
                     "banners with message: " + loadAdError.getMessage() + ". Caused by: " +
-                    loadAdError.getCause());
+                    loadAdError.getCause() + ". ErrorDomain by:" + loadAdError.getDomain() +". Responsinfo by:" + loadAdError.getResponseInfo());
 
             if (mLoadListener != null) {
                 mLoadListener.onAdLoadFailed(getMoPubErrorCode(loadAdError.getCode()));
@@ -211,15 +226,11 @@ public class GooglePlayServicesBanner extends BaseAd {
         }
 
         @Override
-        public void onAdLeftApplication() {
-        }
-
-        @Override
         public void onAdLoaded() {
             final int receivedWidth = mGoogleAdView.getAdSize().getWidth();
             final int receivedHeight = mGoogleAdView.getAdSize().getHeight();
 
-            if (receivedWidth > adWidth || receivedHeight > adHeight && !adaptiveBanner) {
+            /*if (receivedWidth > adWidth || receivedHeight > adHeight && !adaptiveBanner) {
                 MoPubLog.log(getAdNetworkId(), LOAD_FAILED, ADAPTER_NAME,
                         NETWORK_NO_FILL.getIntCode(),
                         NETWORK_NO_FILL);
@@ -230,7 +241,7 @@ public class GooglePlayServicesBanner extends BaseAd {
                 if (mLoadListener != null) {
                     mLoadListener.onAdLoadFailed(getMoPubErrorCode(NETWORK_NO_FILL.getIntCode()));
                 }
-            } else {
+            } else {*/
                 MoPubLog.log(getAdNetworkId(), LOAD_SUCCESS, ADAPTER_NAME);
                 MoPubLog.log(getAdNetworkId(), SHOW_ATTEMPTED, ADAPTER_NAME);
                 MoPubLog.log(getAdNetworkId(), SHOW_SUCCESS, ADAPTER_NAME);
@@ -238,7 +249,7 @@ public class GooglePlayServicesBanner extends BaseAd {
                 if (mLoadListener != null) {
                     mLoadListener.onAdLoaded();
                 }
-            }
+            //}
         }
 
         @Override
@@ -260,15 +271,15 @@ public class GooglePlayServicesBanner extends BaseAd {
         private MoPubErrorCode getMoPubErrorCode(int error) {
             switch (error) {
                 case AdRequest.ERROR_CODE_INTERNAL_ERROR:
-                    return MoPubErrorCode.INTERNAL_ERROR;
+                    return INTERNAL_ERROR;
                 case AdRequest.ERROR_CODE_INVALID_REQUEST:
-                    return MoPubErrorCode.ADAPTER_CONFIGURATION_ERROR;
+                    return ADAPTER_CONFIGURATION_ERROR;
                 case AdRequest.ERROR_CODE_NETWORK_ERROR:
-                    return MoPubErrorCode.NO_CONNECTION;
+                    return NO_CONNECTION;
                 case AdRequest.ERROR_CODE_NO_FILL:
                     return NO_FILL;
                 default:
-                    return MoPubErrorCode.UNSPECIFIED;
+                    return UNSPECIFIED;
             }
         }
     }
